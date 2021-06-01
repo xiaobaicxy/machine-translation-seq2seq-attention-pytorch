@@ -28,18 +28,17 @@ def load_data(file_name, is_en):
     datas = []
     with open(file_name, 'r', encoding='utf-8') as f:
         for i, line in enumerate(f):
-            if(i>200000):
-                break
+            # if(i>10): # for debug
+            #    break
             line = line.strip()
             if(is_en):
                 datas.append(["BOS"] + nltk.word_tokenize(line.lower()) + ["EOS"])
-                #datas.append(["BOS"] + list(line.lower().split()) + ["EOS"])
             else:
                 datas.append(["BOS"] + list(jieba.cut(line, cut_all=False)) + ["EOS"])
     return datas
 
-en_path = "./datasets/translation/news-commentary-v12.zh-en_en.txt"
-cn_path = "./datasets/translation/news-commentary-v12.zh-en_zh.txt"
+en_path = "./dataset/translation/news-commentary-v12.zh-en.en"
+cn_path = "./dataset/translation/news-commentary-v12.zh-en.zh"
 en = load_data(en_path, is_en=True)
 cn = load_data(cn_path, is_en=False)
 
@@ -167,7 +166,7 @@ class Encoder(nn.Module):
         
         return out, hidden #[batch_size, max_x_sentence_len, enc_hidden_size*2], [1, batch_size, dec_hidden_size]
 
-#attention
+#attention(计算源语言编码与目标语言编码中每个词间的相似度)
 class Attention(nn.Module):
     def __init__(self, encoder_hidden_size, decoder_hidden_size):
         super(Attention, self).__init__()
@@ -196,6 +195,7 @@ class Attention(nn.Module):
         
         atten = F.softmax(atten, dim=2) #[batch_size, max_y_sentence_len, max_x_sentence_len]
         
+        #目标语言上一个词(因为目标语言做了shift处理，所以是上一个词)的编码与源语言所有词经attention的加权，concat上目标语言上一个词的编码，目标语言当前词的预测编码
         context = torch.bmm(atten, context) #[batch_size, max_y_sentence_len, enc_hidden_size*2]
         output = torch.cat((context, output), dim=2) #[batch_size, max_y_sentence_len, enc_hidden_size*2+dec_hidden_size]
         
@@ -246,7 +246,7 @@ class Decoder(nn.Module):
         embed = self.dropout(embed)
         
         packed_embed = nn.utils.rnn.pack_padded_sequence(embed, sorted_lengths.long().cpu().data.numpy(), batch_first=True)
-        #解码器的输入为编码器的输出，上一个词，然后预测下一个词
+        #目标语言编码，h0为编码器中最后一个unit输出的hidden
         packed_out, hidden = self.gru(packed_embed, hidden)
         out, _ = nn.utils.rnn.pad_packed_sequence(packed_out, batch_first=True)
         
@@ -265,15 +265,10 @@ class Decoder(nn.Module):
         return out, hidden
 
 #seq2seq模型
-#训练和验证模型时，解码器第一时间步的输入为"BOS"，encoder_hidden以及encoder_out经attention后的加权和,
-#输出为预测的第一个词；
-#之后，如第二个时间步的输入为第一个实际的目标词和预测的第一个目标词（上一步的输出），
-#以及encoder_out经attention后的加权和。
-#而实际应用模型进行翻译时，解码器第一时间步的输入为"BOS"，encoder_hidden以及encoder_out经attention后的加权和,
-#输出为预测的第一个词；
-#之后，如第二个时间步的输入为预测的第一个目标词（上一步的输出），encoder_hidden
-#以及encoder_out经attention后的加权和（因为实际翻译过程中没有实际对应的目标词）
-#为什么输入不一样还能有效？？？？
+#训练时，decoder中输入了整个目标语言，decoder会先采用一个双向的gru对目标语言进行编码(其输入为shift处理后的目标语言和编码器最后一个unit输出的源语言编码)，
+#因此，训练时，decoder的某一个unit的输出是具有目标语言上下文信息的
+#实际应用时，目标语言是未知的，decoder中双向gru的输入只有上一个unit的输出和编码器最后一个unit输出的源语言编码
+#所以，训练与实际使用的decoder输入是不一致的，为什么输入不一样还能有效？？？？
 class Seq2Seq(nn.Module):
     def __init__(self, encoder, decoder):
         super(Seq2Seq, self).__init__()
@@ -389,8 +384,6 @@ def train(model, data, epoches):
             #创建验证数据集
             if(epoch != 0 and it % 10 == 0):
                 test_datasets.append((batch_x, batch_x_len, batch_y, batch_y_len))
-                continue
-            elif(it % 10 == 0):
                 continue
             batch_x = torch.from_numpy(batch_x).to(device).long()
             batch_x_len = torch.from_numpy(batch_x_len).to(device).long()
