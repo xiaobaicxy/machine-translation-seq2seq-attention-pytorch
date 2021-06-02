@@ -53,8 +53,8 @@ def create_dict(sentences, max_words):
     most_common_words = word_count.most_common(max_words)  #最常见的max_words个词
     total_words = len(most_common_words) + 2  #总词量（+2：词典中添加了“UNK”和“PAD”）
     word_dict = {w[0]: index+2 for index, w in enumerate(most_common_words)}  #word2index
-    word_dict["UNK"] = 0
-    word_dict["PAD"] = 1
+    word_dict["PAD"] = 0
+    word_dict["UNK"] = 1
     return word_dict, total_words
 
 #word2index
