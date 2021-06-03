@@ -302,7 +302,7 @@ class Seq2Seq(nn.Module):
        
         return predicts
 
-#自定义损失函数（mask的交叉熵损失）
+#自定义损失函数
 #目的：使句子中添加的padding部分不参与损失计算
 class MaskCriterion(nn.Module):
     def __init__(self):
@@ -382,7 +382,7 @@ def train(model, data, epoches):
         total_loss = 0.
         for it, (batch_x, batch_x_len, batch_y, batch_y_len) in enumerate(data):
             #创建验证数据集
-            if(epoch != 0 and it % 10 == 0):
+            if(epoch == 0 and it % 10 == 0):
                 test_datasets.append((batch_x, batch_x_len, batch_y, batch_y_len))
                 continue
             batch_x = torch.from_numpy(batch_x).to(device).long()
